@@ -10,26 +10,37 @@ class Dir(Enum):
     DOWN = 2
     RIGHT = 3
 
-class Cart:    
+class Cart:
+    dir_to_char = {
+        Dir.RIGHT: '>',
+        Dir.DOWN:  'v',
+        Dir.LEFT:  '<',
+        Dir.UP:    '^'}
+    
+    cw = {
+        Dir.RIGHT: Dir.DOWN,
+        Dir.DOWN:  Dir.LEFT,
+        Dir.LEFT:  Dir.UP,
+        Dir.UP:    Dir.RIGHT}
+
+    ccw = {
+        Dir.RIGHT: Dir.UP,
+        Dir.UP:    Dir.LEFT,
+        Dir.LEFT:  Dir.DOWN,
+        Dir.DOWN:  Dir.RIGHT}
+    
     def __init__(self, n, x, y, d):
         self.n = n
         self.x = x
         self.y = y
         self.d = d
-        self.turns = 0
+        self.inters = 0
     
     def __repr__(self):
         return "Cart(n=%d x=%d y=%d d=%s)" % (self.n, self.x, self.y, self.d)
     
     def as_char(self):
-        if self.d == Dir.RIGHT:
-            return '>'
-        elif self.d == Dir.DOWN:
-            return 'v'
-        elif self.d == Dir.LEFT:
-            return '<'
-        else:
-            return '^'
+        return self.dir_to_char[self.d]
     
     def advance(self):
         if self.d == Dir.RIGHT:
@@ -42,24 +53,10 @@ class Cart:
             self.y -= 1
             
     def rotcw(self):
-        if self.d == Dir.RIGHT:
-            self.d = Dir.DOWN
-        elif self.d == Dir.DOWN:
-            self.d = Dir.LEFT
-        elif self.d == Dir.LEFT:
-            self.d = Dir.UP
-        elif self.d == Dir.UP:
-            self.d = Dir.RIGHT
+        self.d = self.cw[self.d]
     
     def rotccw(self):
-        if self.d == Dir.RIGHT:
-            self.d = Dir.UP
-        elif self.d == Dir.UP:
-            self.d = Dir.LEFT
-        elif self.d == Dir.LEFT:
-            self.d = Dir.DOWN
-        elif self.d == Dir.DOWN:
-            self.d = Dir.RIGHT
+        self.d = self.ccw[self.d]
     
     def move(self, t):
         if t == '-':
@@ -91,6 +88,16 @@ class Cart:
                 self.advance()
             else:
                 raise Exception("bad dir")
+        elif t == '+':
+            i = self.inters % 3
+            if i == 0:
+                self.rotccw() # turn left
+            elif i == 1:
+                pass # go straight
+            else:
+                self.rotcw() # turn left
+            self.inters += 1
+            self.advance()
         else:
             pass  
     
@@ -160,19 +167,93 @@ class Track:
             t = self.grid[cart.y,cart.x]
             cart.move(t)
         self._index_carts()
-                
+
+    def check_collide(self):
+        for k, carts in self.cart_index.items():
+            (i, j) = k
+            if len(carts) > 1:
+                print("collision at %d,%d" % (i, j))
+                return True
+        return False
+    
+    def remove_collided(self):
+        reindex = False
+        for j in range(self.nrow):
+            for i in range(self.ncol):
+                if (i, j) in self.cart
+        for k, carts in self.cart_index.items():
+            (i, j) = k
+            if len(carts) > 1:
+                print("collision at %d,%d" % (i, j))
+                for c in carts:
+                    self.carts.remove(c)
+                    reindex = True
+        if reindex:
+            self._index_carts()
+
     def printgrid(self):
         for j in range(self.nrow):
             for i in range(self.ncol):
                 if (i, j) in self.cart_index:
-                    print(self.cart_index[(i,j)][0].as_char(), end="")
+                    carts = self.cart_index[(i, j)]
+                    if len(carts) > 1:
+                        print('X', end="")
+                    else:
+                        print(carts[0].as_char(), end="")
                 else:
                     print(self.grid[j,i], end="")
             print()
-
+    
+    def run_to_crash(self, verbose=False):
+        collision = False
+        t = 0
+        if verbose:
+            print("t=%d" % (t,))
+            self.printgrid()
+        while not collision:
+            self.move_carts()
+            t += 1
+            if verbose:
+                print("t=%d" % (t,))
+                self.printgrid()
+            collision = self.check_collide()
+            
+    def run_to_all_crash(self, verbose=False):
+        t = 0
+        count = len(self.carts)
+        if verbose:
+            print("t=%d carts=%d" % (t, count))
+            self.printgrid()
+        while count > 1:   
+            for cart in self.carts:
+            t = self.grid[cart.y,cart.x]
+            cart.move(t)
+        self._index_carts()
+            self.move_carts()
+            t += 1
+            if verbose:
+                print("t=%d carts=%d" % (t, count))
+                self.printgrid()
+            self.remove_collided()
+            count = len(self.carts)
+        self.move_carts()
+        print("last cart %s" % (self.carts[0],))
+            
 t = Track("test.txt")
-t.printgrid()
-for _ in range(10):
-    print()
-    t.move_carts()
-    t.printgrid()
+t.run_to_crash(verbose=True)
+
+inp = Track("input.txt")
+inp.run_to_crash()
+
+t2 = Track("test2.txt")
+t2.run_to_all_crash(verbose=True)
+
+inp2 = Track("input.txt")
+inp2.run_to_all_crash()
+
+#t.printgrid()
+#for _ in range(15):
+#    print()
+#    t.move_carts()
+#    t.printgrid()
+#    t.check_collide()
