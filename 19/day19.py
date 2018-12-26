@@ -47,13 +47,21 @@ class Program:
     def evaluate(self, op, a, b, c):
         self.reg[c] = self.OPCODES[op](self.reg, a, b)
         
-    def run(self):
+    def run(self, debug=0, r0=0):
+        i=0
+        self.reg[0]=r0
         while(self.reg[self.ip] >= 0 and 
               self.reg[self.ip] < self.instructions_size):
+            i+=1
+            if debug >= 1 and (i % 100000) == 0:
+                print("%10d %s" % (i, self.reg))
             op, a, b, c = self.instructions[self.reg[self.ip]]
-            print("ip=%d %s %s %d %d %d" % (self.reg[self.ip], self.reg, op, a, b, c), end="")
+            if debug >= 2:
+                print("ip=%d %s %s %d %d %d" % (self.reg[self.ip], self.reg, op, a, b, c), end="")
             self.evaluate(op, a, b, c)
-            print(" %s" % (self.reg,))
+            if debug >= 2:
+                print(" %s" % (self.reg,))
+
             self.reg[self.ip]+=1
         print(self.reg)
         
@@ -63,4 +71,4 @@ print(t.instructions)
 t.run()
 
 t2 = Program("input.txt")
-t2.run()
+t2.run(debug=2, r0=1)
