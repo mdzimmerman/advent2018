@@ -162,36 +162,8 @@ class Track:
                 self.cart_index[i] = []
             self.cart_index[i].append(c)
 
-    def move_carts(self):
-        for cart in self.carts:
-            t = self.grid[cart.y,cart.x]
-            cart.move(t)
-        self._index_carts()
-
-    def check_collide(self):
-        for k, carts in self.cart_index.items():
-            (i, j) = k
-            if len(carts) > 1:
-                print("collision at %d,%d" % (i, j))
-                return True
-        return False
-    
-    def remove_collided(self):
-        reindex = False
-        for j in range(self.nrow):
-            for i in range(self.ncol):
-                if (i, j) in self.cart
-        for k, carts in self.cart_index.items():
-            (i, j) = k
-            if len(carts) > 1:
-                print("collision at %d,%d" % (i, j))
-                for c in carts:
-                    self.carts.remove(c)
-                    reindex = True
-        if reindex:
-            self._index_carts()
-
     def printgrid(self):
+        self._index_carts()
         for j in range(self.nrow):
             for i in range(self.ncol):
                 if (i, j) in self.cart_index:
@@ -211,12 +183,18 @@ class Track:
             print("t=%d" % (t,))
             self.printgrid()
         while not collision:
-            self.move_carts()
+            self.carts.sort(key=lambda c: (c.x, c.y))
+            for cart in self.carts[:]:
+                tr = self.grid[cart.y,cart.x]
+                cart.move(tr)
+                for othercart in self.carts[:]:
+                    if cart.n != othercart.n and cart.x == othercart.x and cart.y == othercart.y:
+                        collision = True
+                        return (cart.x, cart.y)
             t += 1
             if verbose:
                 print("t=%d" % (t,))
                 self.printgrid()
-            collision = self.check_collide()
             
     def run_to_all_crash(self, verbose=False):
         t = 0
@@ -224,36 +202,32 @@ class Track:
         if verbose:
             print("t=%d carts=%d" % (t, count))
             self.printgrid()
-        while count > 1:   
-            for cart in self.carts:
-            t = self.grid[cart.y,cart.x]
-            cart.move(t)
-        self._index_carts()
-            self.move_carts()
+        while count > 1:
+            self.carts.sort(key=lambda c: (c.x, c.y))
+            for cart in self.carts[:]:
+                tr = self.grid[cart.y,cart.x]
+                cart.move(tr)
+                for othercart in self.carts[:]:
+                    if cart.n != othercart.n and cart.x == othercart.x and cart.y == othercart.y:
+                        self.carts.remove(cart)
+                        self.carts.remove(othercart)
+                        self._index_carts()
             t += 1
             if verbose:
                 print("t=%d carts=%d" % (t, count))
                 self.printgrid()
-            self.remove_collided()
             count = len(self.carts)
-        self.move_carts()
+        #self.move_carts()
         print("last cart %s" % (self.carts[0],))
             
 t = Track("test.txt")
-t.run_to_crash(verbose=True)
+print(t.run_to_crash(verbose=True))
 
 inp = Track("input.txt")
-inp.run_to_crash()
+print(inp.run_to_crash())
 
 t2 = Track("test2.txt")
 t2.run_to_all_crash(verbose=True)
 
 inp2 = Track("input.txt")
 inp2.run_to_all_crash()
-
-#t.printgrid()
-#for _ in range(15):
-#    print()
-#    t.move_carts()
-#    t.printgrid()
-#    t.check_collide()
