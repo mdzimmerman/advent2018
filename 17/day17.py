@@ -109,9 +109,14 @@ class Ground:
         x, y = sx, sy
         self.grid[y,x] = 2
         # down
-        while y < self.height-1 and self.grid[y+1,x] == 0:
-            self.grid[y+1,x] = 2
-            y += 1
+        while y < self.height-1:
+            if self.grid[y+1,x] == 0:
+                self.grid[y+1,x] = 2
+                y += 1
+            elif self.grid[y+1,x] == 2:
+                return
+            elif self.grid[y+1,x] == 1:
+                break
         
         leak = False
         while y >= 0 and y < self.height-1 and not leak:
@@ -162,7 +167,7 @@ inp.fill(500-inp.xmin, 0)
 fig = plt.figure(figsize=(16,16))
 ax = fig.add_subplot(111)
 ax.set_xlim([0,500])
-ax.set_ylim([0,500])
+ax.set_ylim([500,0])
 ax.imshow(inp.grid)
 fig.show()
 #plt.imshow(inp.grid)            
