@@ -17,6 +17,7 @@ class Cave:
         self.ytarget = y
         self.xmax = x + pad
         self.ymax = y + pad
+        self.path = {}
         self._build_erosion_grid()
     
     def _erosion(self, geoindex):
@@ -46,9 +47,15 @@ class Cave:
                     print("M", end="")
                 elif x == self.xtarget and y == self.ytarget:
                     print("T", end="")
+                elif (x,y) in self.path:
+                    t = self.path[(x,y)]
+                    print(t, end="")
                 else:
                     print(self.SYMBOL[self.grid[y,x]], end="")
             print()
+
+    def area(self):
+        return self.grid[0:self.ytarget+1,0:self.xtarget+1].sum()
 
     def dijkstra(self):
         time = 0
@@ -57,40 +64,45 @@ class Cave:
         visited = {Vertex(0, 0, self.TORCH): 0}
         last = {Vertex(0, 0, self.TORCH): None}
         
-        while True:
+        while heap:
             time, v = heappop(heap)
-            #print(time, v)
             if v.x == self.xtarget and v.y == self.ytarget and v.tool == self.TORCH:
                 break
 
-            for x, y in [(v.x-1, v.y), (v.x, v.y-1), (v.x+1, v.y), (v.x, v.y+1)]:
-                if x < 0 or y < 0 or x > self.xmax or y > self.ymax: # out of bound
-                    continue
-                for tool in [self.NEITHER, self.TORCH, self.CLIMB]:
-                    if (self.grid[y,x] == tool): # disallowed tools
-                        continue
+            for tool in [self.NEITHER, self.TORCH, self.CLIMB]:
+                if self.grid[v.y, v.x] == tool:
+                    continue # can't switch to this tool here
+                for x, y in [(v.x-1, v.y), (v.x, v.y-1), (v.x+1, v.y), (v.x, v.y+1)]:
+                    if x < 0 or y < 0 or x > self.xmax or y > self.ymax:
+                        continue # out of bounds
+                    if (self.grid[y,x] == tool):
+                        continue # tool disallowed in new vertex
                     vnew = Vertex(x, y, tool)
                     tnew = time+1
-                    if vnew.tool != v.tool:
+                    if tool != v.tool:
                         tnew += 7
                     if vnew in visited and visited[vnew] <= tnew:
                         continue
                     visited[vnew] = tnew
                     last[vnew] = v
                     heappush(heap, (tnew, vnew))
-                    
+
+        self.path = {}
         while v in last:
-            print("%4d %s" % (visited[v], v))
+            #print("%4d %s" % (visited[v], v))
+            self.path[(v.x, v.y)] = v.tool
             v = last[v]
-        #print("%4d %s" % (visited[v], v))
         return time
 
 t = Cave(510, 10, 10)
+ttime = t.dijkstra()
 t.pprint()
-print(t.grid[0:11,0:11].sum())
-print(t.dijkstra())
+print("part #1: %d" % (t.area(),))
+print("part #2: %d" % (ttime,))
+print()
 
-inp = Cave(11817, 9, 751, pad=200)
-print(inp.dijkstra())
-#inp.pprint()
-#print(inp.grid[0:752,0:10].sum())      
+inp = Cave(11817, 9, 751, pad=20)
+inptime = inp.dijkstra()
+inp.pprint()
+print("part #1: %d" % (inp.area(),))
+print("part #2: %d" % (inptime,))
