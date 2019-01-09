@@ -48,6 +48,11 @@ class Vein:
             return None
 
 class Ground:
+    EMPTY   = 0
+    CLAY    = 1
+    FLOWING = 2
+    SETTLED = 3
+    
     def __init__(self, filename):
         self.filename = filename
         self.veins = self._read_veins(self.filename)
@@ -79,7 +84,7 @@ class Ground:
                 ymin = v.ymin
             if ymax == None or v.ymax > ymax:
                 ymax = v.ymax
-        return xmin, xmax, ymin, ymax
+        return xmin-1, xmax+1, ymin, ymax
 
     def _build_grid(self):
         grid = np.zeros(shape=(self.height,self.width), dtype=int)
@@ -94,60 +99,51 @@ class Ground:
         for j in range(self.height):
             line = []
             for i in range(self.width):
-                if self.grid[j,i] == 0:
+                v = self.grid[j,i]
+                if v == self.EMPTY:
                     line.append('.')
-                elif self.grid[j,i] == 1:
+                elif v == self.CLAY:
                     line.append('#')
-                elif self.grid[j,i] == 2:
+                elif v == self.FLOWING:
+                    line.append('|')
+                elif v == self.SETTLED:
                     line.append('~')
                 else:
                     line.append("?")
             lines.append("".join(line))
         return "\n".join(lines)
     
-    def fill(self, sx, sy, depth=0):
-        x, y = sx, sy
-        self.grid[y,x] = 2
-        # down
-        while y < self.height-1:
-            if self.grid[y+1,x] == 0:
-                self.grid[y+1,x] = 2
-                y += 1
-            elif self.grid[y+1,x] == 2:
-                return
-            elif self.grid[y+1,x] == 1:
-                break
+    def flow(self, x, y, d):
+        if x < 0 or x >= self.width:
+            return None
+        if self.grid[y,x] == self.EMPTY:
+            self.grid[y,x] = self.FLOWING
+        if y == self.height-1:
+            return None
+        if self.grid[y,x] == self.CLAY:
+            return x
         
-        leak = False
-        while y >= 0 and y < self.height-1 and not leak:
-            # fill left
-            lx = x
-            while lx > 0 and self.grid[y,lx-1] != 1:
-                self.grid[y,lx-1] = 2
-                if lx-1 == 0:
-                    leak = True
-                    break
-                if self.grid[y+1,lx-1] == 0:
-                    leak = True
-                    self.fill(lx-1,y,depth+1)
-                    break
-                lx -= 1
-            # fill right
-            lx = x
-            while lx < self.width-1 and self.grid[y,lx+1] != 1:
-                self.grid[y,lx+1] = 2
-                if lx+1 == self.width-1:
-                    leak = True
-                    break
-                if self.grid[y+1,lx+1] == 0:
-                    leak = True
-                    self.fill(lx+1,y,depth+1)
-                    break
-                lx += 1
-            y -= 1
+        if self.grid[y+1,x] == self.EMPTY:
+            self.flow(x, y+1, 0)
+        
+        if self.grid[y+1,x] == self.SETTLED or self.grid[y+1,x] == self.CLAY:
+            if d:
+                return self.flow(x+d, y, d)
+            else:
+                leftx  = self.flow(x-1, y, -1)
+                rightx = self.flow(x+1, y,  1)
+                if self.grid[y,leftx] == self.CLAY and self.grid[y,rightx] == self.CLAY:
+                    self.grid[y,leftx+1:rightx] = self.SETTLED
+        else:
+            return x
             
     def count_water(self):
-        return (self.grid == 2).sum()
+        flowing = (self.grid == self.FLOWING).sum()
+        settled = (self.grid == self.SETTLED).sum()
+        return flowing + settled
+    
+    def count_settled(self):
+        return (self.grid == self.SETTLED).sum()
         
 t = Ground("test.txt")
 
@@ -157,17 +153,19 @@ print(t.ymin, t.ymax)
 #print(t.grid)
 print(t.draw_grid())
 print()
-t.fill(500-t.xmin, 0)
+t.flow(500-t.xmin, 0, 0)
 print(t.draw_grid())
-print(t.count_water())
+print("all: %d" % (t.count_water(),))
+print("settled: %d" % (t.count_settled(),))
 
 inp = Ground("input.txt")
-inp.fill(500-inp.xmin, 0)
+inp.flow(500-inp.xmin, 0, 0)
 #print(inp.draw_grid())
-fig = plt.figure(figsize=(16,16))
+fig = plt.figure(figsize=(12,60))
 ax = fig.add_subplot(111)
-ax.set_xlim([0,500])
-ax.set_ylim([500,0])
+#ax.set_xlim([0,250])
+#ax.set_ylim([500,0])
 ax.imshow(inp.grid)
 fig.show()
-#plt.imshow(inp.grid)            
+print("all: %d" % (inp.count_water(),))
+print("settled: %d" % (inp.count_settled(),))
