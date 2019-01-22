@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import re
+
 class Program:
     OPCODES = {
         "addr": lambda reg, a, b : reg[a] + reg[b],
@@ -49,26 +51,24 @@ class Program:
         self._reset_reg()
         i=0
         self.reg[0]=r0
-        seen=set(tuple(self.reg[:]))
+        seen=set()
         while(self.reg[self.ip] >= 0 and 
               self.reg[self.ip] < self.instructions_size):
-            seen.add(tuple(self.reg[:]))
             i+=1
-            if debug >= 1 and (i % 100000) == 0:
-                print("%10d %s" % (i, self.reg))
             op, a, b, c = self.instructions[self.reg[self.ip]]
-            if debug >= 2:
-                print("ip=%d %s %s %d %d %d" % (self.reg[self.ip], self.reg, op, a, b, c), end="")
+            if self.reg[self.ip] == 28:
+                nstop = self.reg[5]
+                print("%10d %10d" % (i, nstop), end="")
+                if nstop not in seen:
+                    print(" **")
+                    pass
+                else:
+                    print()
+                    return
+                seen.add(nstop)
             self.evaluate(op, a, b, c)
-            if debug >= 2:
-                print(" %s" % (self.reg,))
             self.reg[self.ip]+=1
-            if tuple(self.reg[:]) in seen:
-                print("loop detected")
-                break
         return i
         
 inp = Program("input.txt")
-for n in range(1, 10):
-    print("%4d %d" % (n, inp.run(debug=1, r0=n)))
-    
+inp.run(r0=0)
