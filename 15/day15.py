@@ -1,6 +1,6 @@
 from collections import namedtuple, defaultdict, deque
 import time
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Set
 
 import numpy as np
 
@@ -14,15 +14,15 @@ class Unit:
         self.hp = hp
         self.ap = ap
 
-    def as_char(self):
+    def as_char(self) -> str:
         if self.type == Unit.ELF:
             return "E"
         elif self.type == Unit.GOBLIN:
             return "G"
         else:
-            return None
+            return "?"
 
-    def as_hp(self):
+    def as_hp(self) -> str:
         return "%s(%d)" % (self.as_char(), self.hp)
 
     def __repr__(self):
@@ -43,6 +43,7 @@ class Map:
         self._init_grid(self.filename)
 
     def _init_grid(self, filename):
+        """Initialize the grid."""
         lines = []
         with open(filename, "r") as fh:
             for l in fh:
@@ -67,10 +68,10 @@ class Map:
                     self.units[Pos(i,j)] = Unit(type=Unit.ELF)
                     self.grid[j,i] = "."
 
-    def get_grid(self, pos: Pos):
+    def get_grid(self, pos: Pos) -> str:
         return self.grid[pos.y, pos.x]
 
-    def print_grid(self, dists={}):
+    def print_grid(self, dists: Dict[Pos, int]=dict()):
         for j in range(self.nrow):
             u = []
             for i in range(self.ncol):
@@ -78,14 +79,16 @@ class Map:
                 c = self.grid[j,i]
                 if p in self.units:
                     c = self.units[p].as_char()
-                    u .append(self.units[p].as_hp())
+                    u.append(self.units[p].as_hp())
                 elif p in dists:
                     c = str(dists[p])
                 print(c, end="")
             print("  ", end="")
             print(", ".join(u))
 
-    def neighbors(self, pos: Pos):
+    def neighbors(self, pos: Pos) -> Set[Pos]:
+        """Find all neighboring positions of pos that are not rock
+        (does not check for the presence of other units)."""
         out = set()
         for dx, dy in [(0, -1), (-1, 0), (1, 0), (0, 1)]:
             nx = pos.x + dx
@@ -98,7 +101,7 @@ class Map:
             out.add(npos)
         return out
 
-    def dists(self, start: Pos):
+    def dists(self, start: Pos) -> Dict[Pos, int]:
         """Using BFS, calculate distances to all accessible nodes"""
         dists = {start: 0}
         nodes = deque()
@@ -113,7 +116,7 @@ class Map:
                     nodes.append(neighbor)
         return dists
 
-    def length_of_shortest_path(self, start: Pos, goal: Pos):
+    def length_of_shortest_path(self, start: Pos, goal: Pos) -> int:
         """Using BFS, calculate shortest distance from start to end"""
         if start == goal:
             return 0
@@ -131,7 +134,7 @@ class Map:
                     dists[neighbor] = dists[node]+1
                     nodes.append(neighbor)
 
-    def get_first_step(self, start: Pos, goal: Pos):
+    def get_first_step(self, start: Pos, goal: Pos) -> Pos:
         """For each first step from start, which is the best choice?"""
 
         # find length of shortest path from each first step to goal
@@ -194,7 +197,7 @@ class Map:
         else:
             return (start, "no valid move")
 
-    def attack(self, pos: Pos, unit: Unit):
+    def attack(self, pos: Pos, unit: Unit) -> str:
         # find all adjacent enemies and sort by hp
         enemies = defaultdict(list)
         for npos in self.neighbors(pos):
@@ -216,7 +219,7 @@ class Map:
             status = status + " (unit killed)"
         return status
 
-    def run(self, n=None, debug=False, sleep=0):
+    def run(self, n: int=None, debug: bool=False, sleep: float=0.0) -> int:
         steps = 0
         while n is None or steps < n:
             if debug:
@@ -286,7 +289,7 @@ print()
 print("## input part #1 ##")
 inp = Map("input.txt")
 inp.print_grid()
-print(inp.run(debug=True, sleep=0.1))
+print(inp.run(debug=True, sleep=0.0))
 
 #for i in range(1,50):
 #    print()
