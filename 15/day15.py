@@ -1,5 +1,6 @@
-from collections import namedtuple, defaultdict
-from typing import Dict
+from collections import namedtuple, defaultdict, deque
+import time
+from typing import Dict, Tuple
 
 import numpy as np
 
@@ -20,6 +21,9 @@ class Unit:
             return "G"
         else:
             return None
+
+    def as_hp(self):
+        return "%s(%d)" % (self.as_char(), self.hp)
 
     def __repr__(self):
         typ = None
@@ -68,22 +72,25 @@ class Map:
 
     def print_grid(self, dists={}):
         for j in range(self.nrow):
+            u = []
             for i in range(self.ncol):
                 p = Pos(i,j)
                 c = self.grid[j,i]
                 if p in self.units:
                     c = self.units[p].as_char()
+                    u .append(self.units[p].as_hp())
                 elif p in dists:
                     c = str(dists[p])
                 print(c, end="")
-            print()
+            print("  ", end="")
+            print(", ".join(u))
 
     def neighbors(self, pos: Pos):
         out = set()
         for dx, dy in [(0, -1), (-1, 0), (1, 0), (0, 1)]:
             nx = pos.x + dx
             ny = pos.y + dy
-            if nx < 0 or nx >= self.ncol or ny < 0 or ny > self.nrow:
+            if nx < 0 or nx > self.ncol or ny < 0 or ny > self.nrow:
                 continue
             npos = Pos(pos.x+dx, pos.y+dy)
             if self.get_grid(npos) == "#":
@@ -94,9 +101,10 @@ class Map:
     def dists(self, start: Pos):
         """Using BFS, calculate distances to all accessible nodes"""
         dists = {start: 0}
-        nodes = [start]
+        nodes = deque()
+        nodes.append(start)
         while nodes:
-            node = nodes.pop(0)
+            node = nodes.popleft()
             for neighbor in self.neighbors(node):
                 if neighbor in self.units:
                     continue
@@ -105,36 +113,48 @@ class Map:
                     nodes.append(neighbor)
         return dists
 
-    def all_paths(self, start: Pos, goal: Pos):
-        """Using BFS, calculate all non-self crossing paths between start and goal"""
-        queue = [(start, [start])]
-        while queue:
-            (node, path) = queue.pop(0)
-            for next in self.neighbors(node) - set(path):
-                if next in self.units:
+    def length_of_shortest_path(self, start: Pos, goal: Pos):
+        """Using BFS, calculate shortest distance from start to end"""
+        if start == goal:
+            return 0
+        dists = {start: 0}
+        nodes = deque()
+        nodes.append(start)
+        while nodes:
+            node = nodes.popleft()
+            for neighbor in self.neighbors(node):
+                if neighbor == goal:
+                    return dists[node]+1
+                if neighbor in self.units:
                     continue
-                if next == goal:
-                    yield path + [next]
-                else:
-                    queue.append((next, path + [next]))
+                if neighbor not in dists:
+                    dists[neighbor] = dists[node]+1
+                    nodes.append(neighbor)
 
-    def shortest_paths(self, start: Pos, goal: Pos):
-        shortest = None
-        out = []
-        for path in self.all_paths(start, goal):
-            if shortest is None:
-                shortest = len(path)
-            if len(path) == shortest:
-                out.append(path)
-            else:
-                break
-        return out
+    def get_first_step(self, start: Pos, goal: Pos):
+        """For each first step from start, which is the best choice?"""
 
-    def move(self, start: Pos, unit: Unit) -> str:
+        # find length of shortest path from each first step to goal
+        dist_from_first_step = defaultdict(list)
+        for neighbor in self.neighbors(start):
+            if neighbor not in self.units:
+                d = self.length_of_shortest_path(neighbor, goal)
+                if d is not None:
+                    dist_from_first_step[d].append(neighbor)
+
+        # for the first steps with the shortest paths, pick the best first
+        # step, using reading order to break ties
+        if dist_from_first_step:
+            dmin = min(dist_from_first_step.keys())
+            return sorted(dist_from_first_step[dmin], key=lambda p: (p.y, p.x)).pop(0)
+        else:
+            return None
+
+    def move(self, start: Pos, unit: Unit) -> Tuple[Pos, str]:
         # check if already in attack range
         for n in self.neighbors(start):
             if n in self.units and self.units[n].type != unit.type:
-                return "already in attack range"
+                return (start, "already in attack range")
 
         # find possible in-range attack locations to travel to
         inrange = set()
@@ -162,45 +182,114 @@ class Map:
             dest = sorted(inrange_dists[min_dist], key=lambda p: (p.y, p.x)).pop(0)
             #print("  dest: %s" % (dest,))
 
-            # find all shortest paths to chosen destination
-            shortest_paths = self.shortest_paths(start, dest)
-            first_steps = set()
-            for path in shortest_paths:
-                first_steps.add(path[1])
-            #print("  valid first steps: %s" % (first_steps,))
-
-            # choose the best first step (ties broken by reading order)
-            first_step = sorted(first_steps, key=lambda p: (p.y, p.x)).pop(0)
+            first_step = self.get_first_step(start, dest)
+            if first_step is None:
+                return (start, "no valid move?")
             #print("  first step: %s" % (first_step,))
 
             # actually do move
             self.units[first_step] = unit
             del self.units[start]
-            return "moved %s -> %s" % (start, first_step)
+            return (first_step, "moved %s -> %s" % (start, first_step))
         else:
-            return "no valid move"
+            return (start, "no valid move")
 
-    def step(self):
-        for pos in sorted(self.units.keys(), key=lambda p: (p.y, p.x)):
-            unit = self.units[pos]
-            status = self.move(pos, unit)
-            print("%s %s: %s" % (pos, unit, status))
+    def attack(self, pos: Pos, unit: Unit):
+        # find all adjacent enemies and sort by hp
+        enemies = defaultdict(list)
+        for npos in self.neighbors(pos):
+            if npos in self.units and self.units[npos].type != unit.type:
+                enemies[self.units[npos].hp].append(npos)
+        if not enemies:
+            return "no valid targets in attack range"
+
+        # pick the target with the lowest hp, breaking ties in reading order
+        min_hp = min(enemies.keys())
+        tpos = sorted(enemies[min_hp], key=lambda p: (p.y, p.x)).pop(0)
+        target = self.units[tpos]
+
+        # attack that target
+        status = "attacking target at %s" % (tpos,)
+        target.hp -= unit.ap
+        if target.hp <= 0:
+            del self.units[tpos]
+            status = status + " (unit killed)"
+        return status
+
+    def run(self, n=None, debug=False, sleep=0):
+        steps = 0
+        while n is None or steps < n:
+            if debug:
+                print()
+                print("-- step %d --" % (steps + 1,))
+            no_enemies = False
+            for pos in sorted(self.units.keys(), key=lambda p: (p.y, p.x)):
+                if pos in self.units: # could have been killed by a prior attack step
+                    unit = self.units[pos]
+                    enemies = sum([1 for u in self.units.values() if u.type != unit.type])
+                    if not enemies:
+                        no_enemies = True
+                        break
+                    npos, mstatus = self.move(pos, unit)
+                    astatus = self.attack(npos, unit)
+                    if debug:
+                        #print("%s %s: move=%s, attack=%s" % (pos, unit, mstatus, astatus))
+                        pass
+                else:
+                    if debug:
+                        #print("%s: unit was killed" % (unit,))
+                        pass
+            if debug:
+                self.print_grid()
+            if no_enemies:
+                break
+            else:
+                steps += 1
+            time.sleep(sleep)
+
+        if debug:
+            print()
+        hp_remain = sum(u.hp for u in self.units.values())
+        print("completed steps=%d, hp remaining=%d" % (steps, hp_remain))
+        return hp_remain * steps
+        #self.print_grid()
+
+
 
 print("## test1: basic movement ##")
 t1 = Map("test1.txt")
 print(t1.units)
-print()
 t1.print_grid()
-for _ in range(2):
-    print()
-    t1.step()
-    t1.print_grid()
+t1.run(n=2, debug=True)
 
 print()
 print("## test2: more movement ##")
 t2 = Map("test2.txt")
 t2.print_grid()
-for _ in range(4):
+t2.run(n=4, debug=True)
+
+print()
+print("## test3: full example ##")
+t3 = Map("test3.txt")
+print(t3.run(debug=True))
+
+full = ["test4", "test5", "test6", "test7", "test8"]
+for f in full:
     print()
-    t2.step()
-    t2.print_grid()
+    print("## %s ##" % (f,))
+    t = Map(f+".txt")
+    t.print_grid()
+    print(t.run())
+    t.print_grid()
+
+print()
+print("## input part #1 ##")
+inp = Map("input.txt")
+inp.print_grid()
+print(inp.run(debug=True, sleep=0.1))
+
+#for i in range(1,50):
+#    print()
+#    print("-- step %d --"  % (i,))
+#    t3.step()
+#    t3.print_grid()
