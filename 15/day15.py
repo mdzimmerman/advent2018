@@ -1,10 +1,13 @@
 from collections import namedtuple, defaultdict, deque
+import copy
 import time
 from typing import Dict, Tuple, Set
 
 import numpy as np
 
 Pos = namedtuple("Pos", ["x", "y"])
+
+EndState = namedtuple("EndState", ["steps", "remaining_hp", "outcome", "n_goblins", "n_elves", "status"])
 
 class Unit:
     ELF, GOBLIN = 0, 1
@@ -33,14 +36,18 @@ class Unit:
             typ = "GOBLIN"
         return "Unit(type=%s hp=%d ap=%d)" % (typ, self.hp, self.ap)
 
+class MapException(Exception):
+    pass
+
 class Map:
     def __init__(self, filename):
         self.filename = filename
         self.nrow = 0
         self.ncol = 0
         self.grid = None
-        self.units: Dict[Pos, Unit] = dict()
+        self.init_units: Dict[Pos, Unit] = dict()
         self._init_grid(self.filename)
+        self.reset()
 
     def _init_grid(self, filename):
         """Initialize the grid."""
@@ -62,11 +69,14 @@ class Map:
         for j in range(self.nrow):
             for i in range(self.ncol):
                 if self.grid[j,i] == "G":
-                    self.units[Pos(i,j)] = Unit(type=Unit.GOBLIN)
+                    self.init_units[Pos(i,j)] = Unit(type=Unit.GOBLIN)
                     self.grid[j,i] = "."
                 elif self.grid[j,i] == "E":
-                    self.units[Pos(i,j)] = Unit(type=Unit.ELF)
+                    self.init_units[Pos(i,j)] = Unit(type=Unit.ELF)
                     self.grid[j,i] = "."
+
+    def reset(self):
+        self.units = copy.deepcopy(self.init_units)
 
     def get_grid(self, pos: Pos) -> str:
         return self.grid[pos.y, pos.x]
@@ -197,7 +207,7 @@ class Map:
         else:
             return (start, "no valid move")
 
-    def attack(self, pos: Pos, unit: Unit) -> str:
+    def attack(self, pos: Pos, unit: Unit, elf_ap=3) -> str:
         # find all adjacent enemies and sort by hp
         enemies = defaultdict(list)
         for npos in self.neighbors(pos):
@@ -217,82 +227,105 @@ class Map:
         if target.hp <= 0:
             del self.units[tpos]
             status = status + " (unit killed)"
+            if elf_ap > 3 and target.type == Unit.ELF:
+                raise MapException("elf was killed")
         return status
 
-    def run(self, n: int=None, debug: bool=False, sleep: float=0.0) -> int:
+    def run(self, n: int=None, debug: int=0, sleep: float=0.0, elf_ap=3) -> EndState:
+        self.reset()
+        if elf_ap > 3:
+            for u in self.units.values():
+                if u.type == Unit.ELF:
+                    u.ap = elf_ap
         steps = 0
-        while n is None or steps < n:
-            if debug:
-                print()
-                print("-- step %d --" % (steps + 1,))
-            no_enemies = False
-            for pos in sorted(self.units.keys(), key=lambda p: (p.y, p.x)):
-                if pos in self.units: # could have been killed by a prior attack step
-                    unit = self.units[pos]
-                    enemies = sum([1 for u in self.units.values() if u.type != unit.type])
-                    if not enemies:
-                        no_enemies = True
-                        break
-                    npos, mstatus = self.move(pos, unit)
-                    astatus = self.attack(npos, unit)
-                    if debug:
-                        #print("%s %s: move=%s, attack=%s" % (pos, unit, mstatus, astatus))
+        status = ""
+        try:
+            while True:
+                if n is not None and steps >= n:
+                    raise MapException("ending at step %d" % (n,))
+                if debug:
+                    print()
+                    print("-- step %d --" % (steps + 1,))
+                for pos in sorted(self.units.keys(), key=lambda p: (p.y, p.x)):
+                    if pos in self.units: # could have been killed by a prior attack step
+                        unit = self.units[pos]
+                        enemies = sum([1 for u in self.units.values() if u.type != unit.type])
+                        if not enemies:
+                            raise MapException("all enemies killed")
+                        npos, mstatus = self.move(pos, unit)
+                        astatus = self.attack(npos, unit, elf_ap=elf_ap)
+                        if debug >= 2: print("%s %s: move=%s, attack=%s" % (pos, unit, mstatus, astatus))
                         pass
-                else:
-                    if debug:
-                        #print("%s: unit was killed" % (unit,))
-                        pass
-            if debug:
-                self.print_grid()
-            if no_enemies:
-                break
-            else:
+                    else:
+                        if debug >= 2: print("%s: unit was killed" % (unit,))
+
+                if debug:
+                    self.print_grid()
+                    time.sleep(sleep)
                 steps += 1
-            time.sleep(sleep)
+        except MapException as e:
+            status = e.args[0]
 
-        if debug:
-            print()
-        hp_remain = sum(u.hp for u in self.units.values())
-        print("completed steps=%d, hp remaining=%d" % (steps, hp_remain))
-        return hp_remain * steps
-        #self.print_grid()
+        remaining_hp = sum(u.hp for u in self.units.values())
+        outcome = steps * remaining_hp
+        n_goblins = sum(1 for u in self.units.values() if unit.type == Unit.GOBLIN)
+        n_elves   = sum(1 for u in self.units.values() if unit.type == Unit.ELF)
+        return EndState(steps, remaining_hp, outcome, n_goblins, n_elves, status)
 
+    def find_lowest_elf_ap(self, debug=0):
+        elf_ap = 4
+        status = ""
+        state = None
+        while status != "all enemies killed":
+            state = self.run(debug=0, elf_ap=elf_ap)
+            if debug:
+                print("%4d %s" % (elf_ap, state))
+            elf_ap += 1
+            status = state.status
+        self.print_grid()
+        return state
 
-
-print("## test1: basic movement ##")
+print("== test1: basic movement ==")
 t1 = Map("test1.txt")
 print(t1.units)
 t1.print_grid()
-t1.run(n=2, debug=True)
+print(t1.run(n=2, debug=2))
 
 print()
-print("## test2: more movement ##")
+print("== test2: more movement ==")
 t2 = Map("test2.txt")
 t2.print_grid()
-t2.run(n=4, debug=True)
+print(t2.run(n=4, debug=2))
 
 print()
-print("## test3: full example ##")
+print("== test3: full example ==")
 t3 = Map("test3.txt")
-print(t3.run(debug=True))
+print(t3.run(debug=0))
 
 full = ["test4", "test5", "test6", "test7", "test8"]
 for f in full:
     print()
-    print("## %s ##" % (f,))
+    print("== %s ==" % (f,))
     t = Map(f+".txt")
     t.print_grid()
     print(t.run())
     t.print_grid()
 
 print()
-print("## input part #1 ##")
+print("== input ==")
 inp = Map("input.txt")
 inp.print_grid()
-print(inp.run(debug=True, sleep=0.0))
+print(inp.run(debug=0, sleep=0.0))
+inp.print_grid()
 
-#for i in range(1,50):
-#    print()
-#    print("-- step %d --"  % (i,))
-#    t3.step()
-#    t3.print_grid()
+full = ["test3", "test4", "test5", "test6", "test7", "test8"]
+for f in full:
+    print()
+    print("== part #2, %s ==" % (f,))
+    t = Map(f+".txt")
+    t.print_grid()
+    t.find_lowest_elf_ap(debug=1)
+
+print()
+print("== part #2, input ==")
+inp.find_lowest_elf_ap(debug=1)
